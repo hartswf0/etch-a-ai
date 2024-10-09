@@ -25,17 +25,11 @@
             max-width: 400px;
             box-sizing: border-box;
         }
-        #file-input {
-            margin-top: 10px;
-        }
         button {
             background-color: #4CAF50;
             border: none;
             color: white;
             padding: 10px 20px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
             font-size: 16px;
             margin-top: 10px;
             cursor: pointer;
@@ -88,26 +82,6 @@
             elements.errorMessage.textContent = error.message;
         };
 
-        const validateApiKey = async (apiKey) => {
-            if (!apiKey || apiKey.length < 20) {
-                throw new Error('Invalid API key format');
-            }
-
-            try {
-                const response = await fetch('https://api.openai.com/v1/engines', {
-                    headers: { 'Authorization': `Bearer ${apiKey}` }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Invalid API key');
-                }
-
-                return true;
-            } catch (error) {
-                throw new Error('API key validation failed: ' + error.message);
-            }
-        };
-
         const analyzeImage = async () => {
             if (!imageData) {
                 handleError(new Error('No image uploaded. Please upload an image first.'));
@@ -116,19 +90,33 @@
 
             try {
                 const apiKey = elements.apiKeyInput.value.trim();
-                await validateApiKey(apiKey);
+                if (!apiKey || apiKey.length < 20) {
+                    throw new Error('Invalid API key format');
+                }
 
-                const response = await fetch('https://api.openai.com/v1/images/edits', {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`
                     },
                     body: JSON.stringify({
-                        prompt: "Analyze the uploaded image and provide feedback or suggestions.",
-                        image: `data:image/png;base64,${imageData}`,
-                        n: 1,
-                        size: "256x256"
+                        model: "gpt-4-vision",
+                        messages: [
+                            {
+                                role: "user",
+                                content: [
+                                    { type: "text", text: "What's in this image?" },
+                                    {
+                                        type: "image_url",
+                                        image_url: {
+                                            url: `data:image/jpeg;base64,${imageData}`
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        max_tokens: 300
                     })
                 });
 
@@ -137,7 +125,7 @@
                 }
 
                 const data = await response.json();
-                elements.analysisResult.value = data.choices[0].text;
+                elements.analysisResult.value = data.choices[0].message.content;
             } catch (error) {
                 handleError(new Error('Error analyzing the image: ' + error.message));
             }
