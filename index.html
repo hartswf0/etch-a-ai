@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI-Enhanced Etch-a-Sketch</title>
+    <title>AI Image Analysis Test</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -18,21 +18,16 @@
             box-sizing: border-box;
         }
         #container {
-            background-color: #c41e3a;
-            border-radius: 20px;
+            background-color: #ffffff;
+            border-radius: 10px;
             padding: 20px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-            max-width: 100%;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
             box-sizing: border-box;
         }
-        #sketch-pad {
-            background-color: #e0e0e0;
-            border: 2px solid #a0a0a0;
-            touch-action: none;
-            max-width: 100%;
-            height: auto;
+        #file-input {
+            margin-top: 10px;
         }
-        #controls { display: flex; justify-content: space-between; margin-top: 20px; flex-wrap: wrap; }
         button {
             background-color: #4CAF50;
             border: none;
@@ -42,50 +37,21 @@
             text-decoration: none;
             display: inline-block;
             font-size: 16px;
-            margin: 4px 2px;
+            margin-top: 10px;
             cursor: pointer;
             border-radius: 5px;
         }
-        button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        #dials {
-            display: flex;
-            justify-content: space-between;
-            width: 100%;
-            margin-top: 20px;
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
         }
-        .dial {
-            width: 80px;
-            height: 80px;
-            background-color: #ffffff;
-            border-radius: 50%;
-            border: 10px solid #a0a0a0;
-            position: relative;
-            cursor: pointer;
-        }
-        .dial::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 8px;
-            height: 40px;
-            background-color: #c41e3a;
-            transform-origin: bottom center;
-            transform: translate(-50%, -100%);
-        }
-        #ai-analysis, #verification-container {
-            margin-top: 20px;
-            width: 100%;
-        }
-        #api-key-input, #analysis-result {
+        #analysis-result {
             width: 100%;
             padding: 10px;
             margin-top: 10px;
             border: 1px solid #ccc;
             border-radius: 4px;
             box-sizing: border-box;
-        }
-        #analysis-result {
             height: 100px;
             resize: vertical;
         }
@@ -93,160 +59,35 @@
             color: red;
             margin-top: 10px;
         }
-        #log-container {
-            margin-top: 20px;
-            width: 100%;
-            height: 100px;
-            overflow-y: scroll;
-            border: 1px solid #ccc;
-            padding: 10px;
-            background-color: #f8f8f8;
-            font-family: monospace;
-            font-size: 12px;
-        }
-        #capture-preview {
-            max-width: 100%;
-            height: auto;
-            margin-top: 10px;
-            border: 1px solid #ccc;
-            display: none;
-        }
     </style>
 </head>
 <body>
     <div id="container">
-        <canvas id="sketch-pad" width="300" height="300"></canvas>
-        <div id="dials">
-            <div id="x-dial" class="dial"></div>
-            <div id="y-dial" class="dial"></div>
-        </div>
-        <div id="controls">
-            <button id="clear">Clear</button>
-            <button id="capture">Capture Drawing</button>
-            <button id="analyze" disabled>Analyze with AI</button>
-            <button id="validate-key">Validate API Key</button>
-        </div>
-        <div id="verification-container">
-            <img id="capture-preview" alt="Captured drawing preview">
-            <button id="confirm-capture" disabled>Confirm Capture</button>
-        </div>
-        <div id="ai-analysis">
-            <input type="text" id="api-key-input" placeholder="Enter your OpenAI API Key">
-            <textarea id="analysis-result" readonly placeholder="AI analysis will appear here"></textarea>
-        </div>
+        <h2>Upload Image for AI Analysis</h2>
+        <input type="file" id="file-input" accept="image/*">
+        <input type="text" id="api-key-input" placeholder="Enter your OpenAI API Key">
+        <button id="analyze" disabled>Analyze Image</button>
+        <textarea id="analysis-result" readonly placeholder="AI analysis will appear here"></textarea>
         <div id="error-message"></div>
     </div>
-    <div id="log-container"></div>
 
     <script>
     (function() {
-        // State management
-        const state = {
-            cursorX: 150,
-            cursorY: 150,
-            isDrawing: false,
-            capturedImageData: null,
-            apiKey: '',
-        };
-
-        // DOM elements
         const elements = {
-            canvas: document.getElementById('sketch-pad'),
-            clearBtn: document.getElementById('clear'),
-            captureBtn: document.getElementById('capture'),
+            fileInput: document.getElementById('file-input'),
             analyzeBtn: document.getElementById('analyze'),
-            validateKeyBtn: document.getElementById('validate-key'),
-            xDial: document.getElementById('x-dial'),
-            yDial: document.getElementById('y-dial'),
             apiKeyInput: document.getElementById('api-key-input'),
             analysisResult: document.getElementById('analysis-result'),
-            capturePreview: document.getElementById('capture-preview'),
-            confirmCaptureBtn: document.getElementById('confirm-capture'),
             errorMessage: document.getElementById('error-message'),
-            logContainer: document.getElementById('log-container'),
         };
 
-        const ctx = elements.canvas.getContext('2d');
-
-        // Utility functions
-        const log = (message) => {
-            console.log(message);
-            elements.logContainer.innerHTML += `${new Date().toISOString()} - ${message}<br>`;
-            elements.logContainer.scrollTop = elements.logContainer.scrollHeight;
-        };
+        let imageData = null;
 
         const handleError = (error) => {
             console.error(error);
-            log(`Error: ${error.message}`);
             elements.errorMessage.textContent = error.message;
         };
 
-        // Drawing functions
-        const draw = () => {
-            if (!state.isDrawing) return;
-            ctx.lineTo(state.cursorX, state.cursorY);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(state.cursorX, state.cursorY);
-        };
-
-        const clear = () => {
-            ctx.clearRect(0, 0, elements.canvas.width, elements.canvas.height);
-            state.cursorX = elements.canvas.width / 2;
-            state.cursorY = elements.canvas.height / 2;
-            ctx.beginPath();
-            ctx.moveTo(state.cursorX, state.cursorY);
-            log('Canvas cleared');
-        };
-
-        const rotateDial = (dial, angle) => {
-            dial.style.transform = `rotate(${angle}deg)`;
-        };
-
-        const handleDial = (e, dial, isVertical) => {
-            const rect = dial.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-            const angle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
-
-            rotateDial(dial, angle);
-
-            const speed = 2;
-            if (isVertical) {
-                state.cursorY += speed * Math.sin(angle * Math.PI / 180);
-                state.cursorY = Math.max(0, Math.min(state.cursorY, elements.canvas.height));
-            } else {
-                state.cursorX += speed * Math.cos(angle * Math.PI / 180);
-                state.cursorX = Math.max(0, Math.min(state.cursorX, elements.canvas.width));
-            }
-
-            draw();
-        };
-
-        // Image capture and verification
-        const captureCanvas = () => {
-            try {
-                const imageData = elements.canvas.toDataURL('image/png');
-                elements.capturePreview.src = imageData;
-                elements.capturePreview.style.display = 'block';
-                state.capturedImageData = imageData.split(',')[1];
-                elements.confirmCaptureBtn.disabled = false;
-                log('Canvas image captured successfully');
-            } catch (error) {
-                handleError(new Error('Failed to capture canvas image: ' + error.message));
-            }
-        };
-
-        const confirmCapture = () => {
-            if (!state.capturedImageData) {
-                handleError(new Error('No image captured yet'));
-                return;
-            }
-            elements.analyzeBtn.disabled = false;
-            log('Capture confirmed by user');
-        };
-
-        // API key validation and analysis
         const validateApiKey = async (apiKey) => {
             if (!apiKey || apiKey.length < 20) {
                 throw new Error('Invalid API key format');
@@ -261,16 +102,15 @@
                     throw new Error('Invalid API key');
                 }
 
-                log('API key validated successfully');
                 return true;
             } catch (error) {
                 throw new Error('API key validation failed: ' + error.message);
             }
         };
 
-        const analyzeDrawing = async () => {
-            if (!state.capturedImageData) {
-                handleError(new Error('No image captured. Please capture and confirm the drawing first.'));
+        const analyzeImage = async () => {
+            if (!imageData) {
+                handleError(new Error('No image uploaded. Please upload an image first.'));
                 return;
             }
 
@@ -285,8 +125,8 @@
                         'Authorization': `Bearer ${apiKey}`
                     },
                     body: JSON.stringify({
-                        prompt: "Analyze the drawing on the Etch-a-Sketch and provide artistic feedback or suggestions for improvement.",
-                        image: `data:image/png;base64,${state.capturedImageData}`,
+                        prompt: "Analyze the uploaded image and provide feedback or suggestions.",
+                        image: `data:image/png;base64,${imageData}`,
                         n: 1,
                         size: "256x256"
                     })
@@ -298,63 +138,27 @@
 
                 const data = await response.json();
                 elements.analysisResult.value = data.choices[0].text;
-                log('AI analysis completed successfully');
             } catch (error) {
-                handleError(new Error('Error analyzing the drawing: ' + error.message));
+                handleError(new Error('Error analyzing the image: ' + error.message));
             }
         };
 
-        // Event listeners
-        elements.xDial.addEventListener('mousedown', () => state.isDrawing = true);
-        elements.yDial.addEventListener('mousedown', () => state.isDrawing = true);
-        document.addEventListener('mouseup', () => state.isDrawing = false);
-        document.addEventListener('mousemove', (e) => {
-            if (state.isDrawing) {
-                if (e.target === elements.xDial) handleDial(e, elements.xDial, false);
-                if (e.target === elements.yDial) handleDial(e, elements.yDial, true);
-            }
+        elements.fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                imageData = reader.result.split(',')[1];
+                elements.analyzeBtn.disabled = false;
+            };
+            reader.onerror = () => {
+                handleError(new Error('Failed to read the image file.'));
+            };
+            reader.readAsDataURL(file);
         });
 
-        elements.xDial.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            state.isDrawing = true;
-        });
-        elements.yDial.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            state.isDrawing = true;
-        });
-        document.addEventListener('touchend', () => state.isDrawing = false);
-        document.addEventListener('touchmove', (e) => {
-            if (state.isDrawing) {
-                const touch = e.touches[0];
-                if (e.target === elements.xDial) handleDial(touch, elements.xDial, false);
-                if (e.target === elements.yDial) handleDial(touch, elements.yDial, true);
-            }
-        });
-
-        elements.clearBtn.addEventListener('click', clear);
-        elements.captureBtn.addEventListener('click', captureCanvas);
-        elements.confirmCaptureBtn.addEventListener('click', confirmCapture);
-        elements.analyzeBtn.addEventListener('click', analyzeDrawing);
-        elements.validateKeyBtn.addEventListener('click', async () => {
-            try {
-                const apiKey = elements.apiKeyInput.value.trim();
-                await validateApiKey(apiKey);
-                alert('API key is valid!');
-            } catch (error) {
-                handleError(error);
-            }
-        });
-
-        // Initialization
-        (() => {
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 2;
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(state.cursorX, state.cursorY);
-            log('Etch-a-Sketch initialized with integrated features and negative space programming');
-        })();
+        elements.analyzeBtn.addEventListener('click', analyzeImage);
     })();
     </script>
 </body>
